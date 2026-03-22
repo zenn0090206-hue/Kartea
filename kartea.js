@@ -19,14 +19,23 @@ function userKey(key) {
 // ================================
 // AUTH FUNCTIONS
 // ================================
+
+// FIXED: handles both <img> and <i class="toggle-eye"> elements
 function togglePassword(inputId = "password", eyeElement = null) {
     const password = document.getElementById(inputId);
     const eye = eyeElement || document.querySelector(".toggle-eye");
     if (!password || !eye) return;
     const isHidden = password.type === "password";
     password.type = isHidden ? "text" : "password";
-    eye.src = isHidden ? "preview-show-interface-icon-free-vector.jpg" : "eye-close-1.png";
-    eye.alt = isHidden ? "Hide password" : "Show password";
+    if (eye.tagName === 'I') {
+        // Font Awesome icon toggle
+        eye.classList.toggle('fa-eye-slash', !isHidden);
+        eye.classList.toggle('fa-eye', isHidden);
+    } else {
+        // Legacy <img> fallback
+        eye.src = isHidden ? "eye-open.png" : "eye-close.png";
+        eye.alt = isHidden ? "Hide password" : "Show password";
+    }
 }
 
 function login(event) {
@@ -41,7 +50,10 @@ function login(event) {
         const role = user.role || 'user';
         setRole(role); setCurrentUser(email);
         loadCart(); updateCartIndicator(); renderCartBox();
-        if (errorEl) errorEl.innerText = `${role.charAt(0).toUpperCase() + role.slice(1)} login successful — redirecting...`;
+        loadFavorites(); syncFavButtons();
+        const statusEl = document.getElementById('role-status');
+        if (statusEl) statusEl.innerText = getLoginStatusText();
+        if (errorEl) errorEl.innerText = `Welcome back, @${user.username || email.split('@')[0]}! Redirecting...`;
         setTimeout(() => {
             if (role === 'admin') { switchPage('admin-page'); if (typeof updateUsersList !== 'undefined') updateUsersList(); }
             else { switchPage('shop-page'); }
@@ -59,17 +71,101 @@ function login(event) {
 
 function register(event) {
     event.preventDefault();
+    const username = document.getElementById('signup-username').value.trim();
     const email = document.getElementById('signup-email').value.trim().toLowerCase();
     const password = document.getElementById('signup-password').value.trim();
     const confirm = document.getElementById('signup-confirm').value.trim();
-    if (!email || !password || !confirm) { alert('Please fill in all fields.'); return; }
+    if (!username || !email || !password || !confirm) { alert('Please fill in all fields.'); return; }
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) { alert('Username must be 3–20 characters, letters/numbers/underscore only.'); return; }
     if (password !== confirm) { alert('Passwords do not match.'); return; }
     if (email === 'admin@gmail.com') { alert('This email is reserved.'); return; }
     if (getUsers().find(u => u.email === email)) { alert('This email is already registered. Please log in.'); return; }
-    addUser({ email, password, role: 'user' });
+    if (getUsers().find(u => u.username && u.username.toLowerCase() === username.toLowerCase())) {
+        alert('That username is already taken. Please choose another.'); return;
+    }
+    addUser({ email, password, role: 'user', username });
     alert('Your account has been created. You can now log in.');
     document.getElementById('signupForm').reset();
     switchPage('login-page');
+}
+
+// Real-time username availability check
+document.addEventListener('DOMContentLoaded', () => {
+    const usernameInput = document.getElementById('signup-username');
+    if (usernameInput) {
+        usernameInput.addEventListener('input', function() {
+            const val = this.value.trim();
+            const statusEl = document.getElementById('username-status');
+            if (!statusEl) return;
+            if (!val) { statusEl.textContent = ''; return; }
+            if (!/^[a-zA-Z0-9_]{3,20}$/.test(val)) {
+                statusEl.textContent = 'Only letters, numbers, underscore. 3–20 chars.';
+                statusEl.style.color = 'var(--danger)';
+                return;
+            }
+            const taken = getUsers().find(u => u.username && u.username.toLowerCase() === val.toLowerCase());
+            if (taken) {
+                statusEl.textContent = '✗ Username already taken';
+                statusEl.style.color = 'var(--danger)';
+            } else {
+                statusEl.textContent = '✓ Username available';
+                statusEl.style.color = 'var(--success)';
+            }
+        });
+    }
+});
+
+// ================================
+// USERNAME HELPERS
+// ================================
+function getCurrentUsername() {
+    const email = getCurrentUser();
+    if (!email) return '';
+    if (email === 'admin@gmail.com') return 'Admin';
+    const user = getUsers().find(u => u.email === email);
+    return user?.username || email.split('@')[0];
+}
+
+function changeUsername() {
+    const newVal = document.getElementById('newUsername')?.value.trim();
+    const statusEl = document.getElementById('new-username-status');
+    if (!newVal) { if (statusEl) { statusEl.textContent = 'Please enter a username.'; statusEl.style.color = 'var(--danger)'; } return; }
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(newVal)) {
+        if (statusEl) { statusEl.textContent = 'Only letters, numbers, underscore. 3–20 chars.'; statusEl.style.color = 'var(--danger)'; } return;
+    }
+    const email = getCurrentUser();
+    const users = getUsers();
+    const taken = users.find(u => u.email !== email && u.username && u.username.toLowerCase() === newVal.toLowerCase());
+    if (taken) {
+        if (statusEl) { statusEl.textContent = '✗ Username already taken.'; statusEl.style.color = 'var(--danger)'; } return;
+    }
+    const idx = users.findIndex(u => u.email === email);
+    if (idx !== -1) { users[idx].username = newVal; setUsers(users); }
+    if (statusEl) { statusEl.textContent = ''; }
+    document.getElementById('newUsername').value = '';
+    document.getElementById('current-username-display').textContent = '@' + newVal;
+    showProfileToast('✓ Username updated to @' + newVal);
+}
+
+function initAccountPage() {
+    const display = document.getElementById('current-username-display');
+    if (display) display.textContent = '@' + getCurrentUsername();
+    const inp = document.getElementById('newUsername');
+    const st = document.getElementById('new-username-status');
+    if (inp && st) {
+        inp.oninput = function() {
+            const val = this.value.trim();
+            if (!val) { st.textContent = ''; return; }
+            if (!/^[a-zA-Z0-9_]{3,20}$/.test(val)) {
+                st.textContent = 'Only letters, numbers, underscore. 3–20 chars.';
+                st.style.color = 'var(--danger)'; return;
+            }
+            const email = getCurrentUser();
+            const taken = getUsers().find(u => u.email !== email && u.username && u.username.toLowerCase() === val.toLowerCase());
+            st.textContent = taken ? '✗ Username already taken' : '✓ Available';
+            st.style.color = taken ? 'var(--danger)' : 'var(--success)';
+        };
+    }
 }
 
 function getUsers() {
@@ -85,11 +181,14 @@ function getCurrentUser() { return localStorage.getItem('currentUser'); }
 function getLoginStatusText() {
     const role = getRole(), email = getCurrentUser();
     if (!role || !email) return 'Not logged in yet.';
-    return `Logged in as ${role} (${email})`;
+    const user = getUsers().find(u => u.email === email);
+    const username = user?.username || email.split('@')[0];
+    return `Logged in as @${username}`;
 }
 
 function logout() {
     cartCounts = {};
+    favorites = {};
     updateCartIndicator();
     renderCartBox();
     localStorage.removeItem('role');
@@ -224,23 +323,46 @@ function renderCartBox() {
     const itemsDiv = box.querySelector('.cart-items');
     itemsDiv.innerHTML = '';
     let totalCost = 0;
+
     for (const [title, data] of Object.entries(cartCounts)) {
         const count = Number(data.count) || 0;
         if (count === 0) continue;
         const unitPrice = Number(data.price) || 0;
         const lineTotal = unitPrice * count;
+
         const line = document.createElement('div');
         line.className = 'cart-item';
-        const nameSpan = document.createElement('span'); nameSpan.textContent = `${title} x${count}`; line.appendChild(nameSpan);
-        const unitSpan = document.createElement('span'); unitSpan.className = 'unit-price'; unitSpan.textContent = `@₱${unitPrice.toFixed(2)}`; line.appendChild(unitSpan);
-        const totalSpan = document.createElement('span'); totalSpan.className = 'line-total'; totalSpan.textContent = `= ₱${lineTotal.toFixed(2)}`; line.appendChild(totalSpan);
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'remove-btn'; removeBtn.setAttribute('aria-label', `Remove ${title}`); removeBtn.textContent = '×';
-        removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeFromCart(title); });
-        line.appendChild(removeBtn);
+        line.innerHTML = `
+            <div class="cart-item-info">
+                <div class="cart-item-name">${title}</div>
+                <div class="cart-item-unit">₱${unitPrice.toFixed(2)} each</div>
+            </div>
+            <div class="cart-item-right">
+                <div class="cart-qty-controls">
+                    <button class="cart-qty-btn cart-qty-minus" aria-label="Decrease">−</button>
+                    <span class="cart-qty-num">${count}</span>
+                    <button class="cart-qty-btn cart-qty-plus" aria-label="Increase">+</button>
+                </div>
+                <div class="cart-line-total">₱${lineTotal.toFixed(2)}</div>
+            </div>`;
+
+        line.querySelectorAll('.cart-qty-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (btn.classList.contains('cart-qty-minus')) {
+                    cartCounts[title].count--;
+                    if (cartCounts[title].count <= 0) delete cartCounts[title];
+                } else {
+                    cartCounts[title].count++;
+                }
+                saveCart(); updateCartIndicator(); renderCartBox();
+            });
+        });
+
         itemsDiv.appendChild(line);
         totalCost += lineTotal;
     }
+
     if (isNaN(totalCost)) totalCost = 0;
     const tax = totalCost * 0.12;
     const finalTotal = totalCost + tax;
@@ -269,24 +391,45 @@ document.addEventListener('click', (e) => {
     toggleCartBox(false);
 });
 
-// Add to Cart delegation
+// Qty stepper on item cards (− / +)
+document.addEventListener('click', function(e) {
+    const dec = e.target.closest('.qty-dec');
+    const inc = e.target.closest('.qty-inc');
+    if (!dec && !inc) return;
+    e.stopPropagation();
+    const frame = (dec || inc).closest('.item-frame');
+    if (!frame) return;
+    const numEl = frame.querySelector('.qty-num');
+    if (!numEl) return;
+    let val = parseInt(numEl.textContent) || 1;
+    if (inc) val = Math.min(val + 1, 99);
+    if (dec) val = Math.max(val - 1, 1);
+    numEl.textContent = val;
+});
+
+// Add to Cart — reads qty from the stepper
 document.addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-add-cart');
     if (!btn) return;
-    const overlay = document.getElementById('overlay');
-    if (overlay && overlay.classList.contains('show')) { overlay.classList.remove('show'); overlay.setAttribute('aria-hidden', 'true'); }
     const itemFrame = btn.closest('.item-frame');
     if (!itemFrame) return;
     const title = (itemFrame.querySelector('.item-title')?.textContent || '').trim();
     const priceText = itemFrame.querySelector('.item-price')?.textContent || '';
     const parsed = parseFloat(priceText.replace(/[^\d.]/g, ''));
     const priceVal = isNaN(parsed) ? 0 : parsed;
+    const qtyEl = itemFrame.querySelector('.qty-num');
+    const qty = qtyEl ? (parseInt(qtyEl.textContent) || 1) : 1;
     if (!title || priceVal === 0) return;
+
     cartCounts[title] = cartCounts[title] || { count: 0, price: priceVal };
-    cartCounts[title].count++;
+    cartCounts[title].count += qty;
     saveCart(); updateCartIndicator(); renderCartBox();
-    btn.textContent = '✓ Added!';
-    setTimeout(() => { btn.textContent = 'Add to Cart'; }, 1500);
+
+    if (qtyEl) qtyEl.textContent = '1';
+
+    btn.textContent = `✓ Added ${qty}!`;
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = 'Add to Cart'; btn.disabled = false; }, 1400);
 });
 
 // Init cart on load
@@ -318,10 +461,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                // Save receipt items for the receipt page
                 localStorage.setItem(userKey('receiptItems'), JSON.stringify(receiptItems));
 
-                // ── Save to Order History (per user) ──
                 const tax = subtotal * 0.12;
                 const grandTotal = subtotal + tax;
                 const newOrder = {
@@ -332,10 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     total: grandTotal
                 };
                 const history = getOrderHistory();
-                history.unshift(newOrder); // newest first
+                history.unshift(newOrder);
                 localStorage.setItem(userKey('orderHistory'), JSON.stringify(history));
 
-                // Clear cart
                 cartCounts = {}; saveCart(); updateCartIndicator(); renderCartBox(); toggleCartBox(false);
                 displayReceipt(); switchPage('receipt-page');
             } else { alert('Your cart is empty!'); }
@@ -357,6 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof updateUsersList !== 'undefined') updateUsersList();
     } else if (role === 'user' && email) {
         loadCart(); updateCartIndicator(); renderCartBox();
+        loadFavorites(); syncFavButtons();
         switchPage('shop-page');
     } else {
         switchPage('login-page');
@@ -377,7 +518,6 @@ function renderOrderHistory() {
 
     const orders = getOrderHistory();
 
-    // Show/hide clear button depending on whether there are orders
     if (clearBtn) clearBtn.style.display = orders.length === 0 ? 'none' : 'inline-flex';
 
     if (orders.length === 0) {
@@ -434,8 +574,8 @@ function clearOrderHistory() {
         const term = query.trim().toLowerCase();
         const sections = document.querySelectorAll('section.category');
         if (term === '') {
-            const activeTab = document.querySelector('.category-tab.active');
-            if (activeTab) activeTab.click();
+            const activeSide = document.querySelector('.sidebar-item.active, .mobile-tab.active');
+            if (activeSide) activeSide.click();
             return;
         }
         sections.forEach(section => {
@@ -452,59 +592,135 @@ function clearOrderHistory() {
 })();
 
 // ================================
-// CATEGORY TABS
+// SIDEBAR NAV + MOBILE TABS
 // ================================
 (function () {
-    const tabs = document.querySelectorAll('.category-tab');
-    if (tabs.length === 0) return;
-    tabs.forEach(tab => {
-        tab.addEventListener('click', function() {
-            const input = document.querySelector('.search-input');
-            if (input) input.value = '';
-            tabs.forEach(t => t.classList.remove('active'));
-            this.classList.add('active');
-            const filter = this.getAttribute('data-filter');
-            document.querySelectorAll('section.category').forEach(section => {
-                if (filter === 'all') {
+    const CATEGORIES = [
+        { filter: 'all',      label: 'All Drinks',   icon: '☕' },
+        { filter: 'coffee',   label: 'Coffee',        icon: '☕' },
+        { filter: 'icetea',   label: 'Ice Tea',       icon: '🧊' },
+        { filter: 'hottea',   label: 'Hot Tea',       icon: '🍵' },
+        { filter: 'milktea',  label: 'Milk Tea',      icon: '🧋' },
+        { filter: 'frappe',   label: 'Frappe',        icon: '🥤' },
+    ];
+
+    function filterItems(filter) {
+        document.querySelectorAll('.sidebar-item[data-filter], .mobile-tab[data-filter]').forEach(el => {
+            el.classList.toggle('active', el.dataset.filter === filter);
+        });
+
+        if (filter === 'favorites') {
+            switchPage('favorites-page');
+            renderFavoritesPage();
+            return;
+        }
+
+        if (filter === 'feedback') {
+            switchPage('feedback-page');
+            initFeedbackPage();
+            return;
+        }
+
+        document.querySelectorAll('section.category').forEach(section => {
+            if (filter === 'all') {
+                section.style.display = 'block';
+                section.querySelectorAll('.item-frame').forEach(f => f.classList.remove('hidden'));
+            } else {
+                if (section.classList.contains(filter)) {
                     section.style.display = 'block';
                     section.querySelectorAll('.item-frame').forEach(f => f.classList.remove('hidden'));
                 } else {
-                    if (section.classList.contains(filter)) {
-                        section.style.display = 'block';
-                        section.querySelectorAll('.item-frame').forEach(f => f.classList.remove('hidden'));
-                    } else {
-                        section.style.display = 'none';
-                    }
+                    section.style.display = 'none';
                 }
-            });
+            }
         });
-    });
-    tabs[0].click();
-})();
 
-// ================================
-// SIDEBAR
-// ================================
-(function () {
-    const btn = document.querySelector('.toggle-btn');
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('overlay');
-    if (!btn || !sidebar || !overlay) return;
+        const input = document.querySelector('.search-input');
+        if (input) input.value = '';
+    }
 
-    function isMobile() { return window.matchMedia('(max-width: 768px)').matches; }
-    function closeSidebar() {
-        sidebar.classList.remove('open'); overlay.classList.remove('show');
-        overlay.setAttribute('aria-hidden', 'true'); btn.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
-        const h = (e) => { if (e.propertyName.includes('transform')) { sidebar.classList.remove('overlay-open'); sidebar.removeEventListener('transitionend', h); } };
-        sidebar.addEventListener('transitionend', h);
+    function buildSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar) return;
+
+        const favCount = typeof getFavCount === 'function' ? getFavCount() : 0;
+
+        sidebar.innerHTML = `
+            <div class="sidebar-group">
+                <div class="sidebar-group-label">Saved</div>
+                <button class="sidebar-item" data-filter="favorites">
+                    <span class="sidebar-icon">♥</span>
+                    Favorites
+                    <span class="sidebar-fav-badge" id="sidebar-fav-badge" style="display:${favCount > 0 ? 'flex' : 'none'}">${favCount}</span>
+                </button>
+                <button class="sidebar-item" data-filter="feedback">
+                    <span class="sidebar-icon">💬</span>
+                    Feedback
+                </button>
+            </div>
+            <div class="sidebar-group sidebar-feedback-group">
+                <div class="sidebar-group-label">What Others Say</div>
+                <div id="sidebar-feedback-list"></div>
+            </div>
+            <div class="sidebar-group">
+                <div class="sidebar-group-label">Drinks</div>
+                ${CATEGORIES.map(c => `
+                    <button class="sidebar-item${c.filter === 'all' ? ' active' : ''}" data-filter="${c.filter}">
+                        <span class="sidebar-icon">${c.icon}</span>
+                        ${c.label}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+
+        sidebar.querySelectorAll('.sidebar-item').forEach(btn => {
+            btn.addEventListener('click', () => filterItems(btn.dataset.filter));
+        });
+
+        if (typeof renderSidebarFeedback === 'function') renderSidebarFeedback();
     }
-    function openSidebar() {
-        sidebar.classList.add('overlay-open'); void sidebar.offsetWidth; sidebar.classList.add('open');
-        overlay.classList.add('show'); overlay.setAttribute('aria-hidden', 'false'); btn.classList.add('open'); btn.setAttribute('aria-expanded', 'true');
+
+    function buildMobileTabs() {
+        const container = document.getElementById('mobile-tabs');
+        if (!container) return;
+
+        const favCount = typeof getFavCount === 'function' ? getFavCount() : 0;
+
+        const items = [
+            { filter: 'favorites', label: '♥ Favorites' },
+            ...CATEGORIES
+        ];
+
+        container.innerHTML = items.map(c =>
+            `<button class="mobile-tab${c.filter === 'all' ? ' active' : ''}" data-filter="${c.filter}">
+                ${c.filter === 'favorites' ? `♥ Favorites${favCount > 0 ? ` (${favCount})` : ''}` : c.label}
+            </button>`
+        ).join('');
+
+        container.querySelectorAll('.mobile-tab').forEach(btn => {
+            btn.addEventListener('click', () => filterItems(btn.dataset.filter));
+        });
     }
-    btn.addEventListener('click', () => { sidebar.classList.contains('open') ? closeSidebar() : openSidebar(); });
-    overlay.addEventListener('click', closeSidebar);
-    window.addEventListener('resize', () => { if (!isMobile() && sidebar.classList.contains('open')) closeSidebar(); });
+
+    function init() {
+        buildSidebar();
+        buildMobileTabs();
+        filterItems('all');
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+    window.refreshNavBadges = function () {
+        const count = typeof getFavCount === 'function' ? getFavCount() : 0;
+        const sb = document.getElementById('sidebar-fav-badge');
+        if (sb) { sb.textContent = count; sb.style.display = count > 0 ? 'flex' : 'none'; }
+        const mt = document.querySelector('.mobile-tab[data-filter="favorites"]');
+        if (mt) mt.textContent = `♥ Favorites${count > 0 ? ` (${count})` : ''}`;
+    };
 })();
 
 // ================================
@@ -533,4 +749,243 @@ function displayReceipt() {
     if (dateEl) dateEl.textContent = new Date().toLocaleString();
     const totalEl = document.getElementById('grand-total');
     if (totalEl) totalEl.textContent = grandTotal.toFixed(2);
+}
+
+// ================================
+// FAVORITES
+// ================================
+const FAV_KEY = 'favorites';
+let favorites = {};
+
+function loadFavorites() {
+    try {
+        const stored = localStorage.getItem(userKey(FAV_KEY));
+        favorites = stored ? JSON.parse(stored) : {};
+    } catch { favorites = {}; }
+}
+
+function saveFavorites() {
+    localStorage.setItem(userKey(FAV_KEY), JSON.stringify(favorites));
+}
+
+function getFavCount() {
+    return Object.keys(favorites).length;
+}
+
+function updateFavIndicator() {
+    const badge = document.getElementById('fav-count-badge');
+    const count = getFavCount();
+    if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'flex' : 'none';
+    }
+}
+
+function toggleFavorite(title, price, imgSrc) {
+    if (favorites[title]) {
+        delete favorites[title];
+        showProfileToast(`💔 Removed from favorites`);
+    } else {
+        favorites[title] = { price, img: imgSrc || '' };
+        showProfileToast(`♥ Added to favorites!`);
+    }
+    saveFavorites();
+    updateFavIndicator();
+    syncFavButtons();
+    if (typeof refreshNavBadges === 'function') refreshNavBadges();
+}
+
+function syncFavButtons() {
+    document.querySelectorAll('.btn-fav').forEach(btn => {
+        const frame = btn.closest('.item-frame');
+        if (!frame) return;
+        const title = (frame.querySelector('.item-title')?.textContent || '').trim();
+        if (favorites[title]) {
+            btn.classList.add('active');
+            btn.setAttribute('aria-label', `Remove ${title} from favorites`);
+            btn.innerHTML = '<i class="fas fa-heart"></i>';
+        } else {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-label', `Add ${title} to favorites`);
+            btn.innerHTML = '<i class="far fa-heart"></i>';
+        }
+    });
+}
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-fav');
+    if (!btn) return;
+    e.stopPropagation();
+    const frame = btn.closest('.item-frame');
+    if (!frame) return;
+    const title = (frame.querySelector('.item-title')?.textContent || '').trim();
+    const priceText = frame.querySelector('.item-price')?.textContent || '';
+    const parsed = parseFloat(priceText.replace(/[^\d.]/g, ''));
+    const priceVal = isNaN(parsed) ? 0 : parsed;
+    const imgEl = frame.querySelector('.item-image');
+    const imgSrc = imgEl ? imgEl.src : '';
+    if (!title) return;
+    toggleFavorite(title, priceVal, imgSrc);
+});
+
+// ================================
+// FAVORITES PAGE
+// ================================
+function renderFavoritesPage() {
+    const list = document.getElementById('favorites-list');
+    const clearBtn = document.getElementById('clear-fav-btn');
+    const emptyCount = document.getElementById('fav-item-count');
+    if (!list) return;
+
+    const entries = Object.entries(favorites);
+
+    if (clearBtn) clearBtn.style.display = entries.length === 0 ? 'none' : 'inline-flex';
+    if (emptyCount) emptyCount.textContent = entries.length > 0
+        ? `${entries.length} item${entries.length !== 1 ? 's' : ''} saved`
+        : '';
+
+    if (entries.length === 0) {
+        list.innerHTML = `
+            <div style="padding: 48px 0; text-align: center;">
+                <i class="fas fa-heart" style="font-size: 52px; color: var(--tan-light); display: block; margin-bottom: 16px;"></i>
+                <p style="color: var(--text-muted); font-size: 14px; font-weight: 600;">No favorites yet.</p>
+                <p style="color: var(--text-muted); font-size: 13px; margin-top: 6px;">Tap the ♥ on any item to save it here.</p>
+            </div>`;
+        return;
+    }
+
+    list.innerHTML = entries.map(([title, data]) => `
+        <div class="fav-card">
+            <div class="fav-card-img-wrap">
+                ${data.img ? `<img src="${data.img}" alt="${title}" class="fav-card-img">` : `<div class="fav-card-img-placeholder"><i class="fas fa-mug-hot"></i></div>`}
+            </div>
+            <div class="fav-card-body">
+                <div class="fav-card-title">${title}</div>
+                <div class="fav-card-price">₱${Number(data.price).toFixed(2)}</div>
+            </div>
+            <button class="fav-card-remove" onclick="removeFavorite('${title.replace(/'/g, "\\'")}')">
+                <i class="fas fa-heart-broken"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+function removeFavorite(title) {
+    delete favorites[title];
+    saveFavorites();
+    updateFavIndicator();
+    syncFavButtons();
+    renderFavoritesPage();
+    if (typeof refreshNavBadges === 'function') refreshNavBadges();
+    showProfileToast('💔 Removed from favorites');
+}
+
+function clearFavorites() {
+    if (!confirm('Clear all favorites? This cannot be undone.')) return;
+    favorites = {};
+    saveFavorites();
+    updateFavIndicator();
+    syncFavButtons();
+    renderFavoritesPage();
+    if (typeof refreshNavBadges === 'function') refreshNavBadges();
+    showProfileToast('Favorites cleared.');
+}
+
+loadFavorites();
+updateFavIndicator();
+
+// ================================
+// FEEDBACK
+// ================================
+const FEEDBACK_KEY = 'feedbacks';
+let selectedRating = 0;
+
+function getFeedbacks() {
+    try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '[]'); } catch { return []; }
+}
+function saveFeedbacks(arr) { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(arr)); }
+
+function initFeedbackPage() {
+    selectedRating = 0;
+    document.querySelectorAll('.star-btn').forEach(b => b.classList.remove('active'));
+    const commentEl = document.getElementById('feedback-comment');
+    if (commentEl) commentEl.value = '';
+    const msgEl = document.getElementById('feedback-msg');
+    if (msgEl) msgEl.textContent = '';
+
+    document.querySelectorAll('.star-btn').forEach(btn => {
+        btn.onclick = function() {
+            selectedRating = parseInt(this.dataset.val);
+            document.querySelectorAll('.star-btn').forEach((b, i) => {
+                b.classList.toggle('active', i < selectedRating);
+            });
+        };
+    });
+
+    renderFeedbackList();
+}
+
+function submitFeedback() {
+    const comment = document.getElementById('feedback-comment')?.value.trim();
+    const msgEl = document.getElementById('feedback-msg');
+    if (!selectedRating) { if (msgEl) { msgEl.textContent = 'Please select a star rating.'; msgEl.style.color = 'var(--danger)'; } return; }
+    if (!comment) { if (msgEl) { msgEl.textContent = 'Please write a comment.'; msgEl.style.color = 'var(--danger)'; } return; }
+
+    const username = getCurrentUsername();
+    const feedbacks = getFeedbacks();
+    feedbacks.unshift({
+        username: '@' + username,
+        rating: selectedRating,
+        comment,
+        date: new Date().toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' })
+    });
+    saveFeedbacks(feedbacks);
+
+    selectedRating = 0;
+    document.querySelectorAll('.star-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('feedback-comment').value = '';
+    if (msgEl) { msgEl.textContent = '✓ Thank you for your feedback!'; msgEl.style.color = 'var(--success)'; }
+    setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3000);
+
+    renderFeedbackList();
+    renderSidebarFeedback();
+}
+
+function renderFeedbackList() {
+    const list = document.getElementById('feedback-list');
+    if (!list) return;
+    const feedbacks = getFeedbacks();
+    if (feedbacks.length === 0) {
+        list.innerHTML = `<p style="text-align:center;color:var(--text-muted);font-size:13px;padding:20px 0;">No feedback yet. Be the first!</p>`;
+        return;
+    }
+    list.innerHTML = feedbacks.map(f => `
+        <div class="feedback-card">
+            <div class="feedback-card-top">
+                <span class="feedback-username">${f.username}</span>
+                <span class="feedback-stars">${'★'.repeat(f.rating)}${'☆'.repeat(5 - f.rating)}</span>
+            </div>
+            <div class="feedback-comment">"${f.comment}"</div>
+            <div class="feedback-date">${f.date}</div>
+        </div>
+    `).join('');
+}
+
+function renderSidebarFeedback() {
+    const container = document.getElementById('sidebar-feedback-list');
+    if (!container) return;
+    const feedbacks = getFeedbacks().slice(0, 3);
+    if (feedbacks.length === 0) {
+        container.innerHTML = `<p style="font-size:12px;color:var(--text-muted);padding:8px 24px;">No feedback yet.</p>`;
+        return;
+    }
+    container.innerHTML = feedbacks.map(f => `
+        <div class="sidebar-feedback-item">
+            <div class="sidebar-feedback-top">
+                <span class="sidebar-feedback-user">${f.username}</span>
+                <span class="sidebar-feedback-stars">${'★'.repeat(f.rating)}</span>
+            </div>
+            <div class="sidebar-feedback-text">"${f.comment}"</div>
+        </div>
+    `).join('');
 }
