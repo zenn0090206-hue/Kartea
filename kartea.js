@@ -333,9 +333,12 @@ function renderCartBox() {
         const line = document.createElement('div');
         line.className = 'cart-item';
         line.innerHTML = `
-            <div class="cart-item-info">
-                <div class="cart-item-name">${title}</div>
-                <div class="cart-item-unit">₱${unitPrice.toFixed(2)} each</div>
+            <div class="cart-item-left">
+                <div class="cart-item-no">#${itemNo++}</div>
+                <div class="cart-item-info">
+                    <div class="cart-item-name">${title}</div>
+                    <div class="cart-item-unit">₱${unitPrice.toFixed(2)} each</div>
+                </div>
             </div>
             <div class="cart-item-right">
                 <div class="cart-qty-controls">
@@ -480,6 +483,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 displayReceipt(); switchPage('receipt-page');
             } else { alert('Your cart is empty!'); }
         });
+                const phoneInput = document.getElementById('customer-phone');
+        if (phoneInput) {
+            alert ('Please enter your contact number for pick-up orders. We will contact you when your order is ready.');
+            document.getElementById('customer-phone').focus();
+            return;
+    }
+    if  (!/^09\d{9}$/.test(customerPhone.replace(/-/g, ''))) {
+        alert('Please enter valid PH number (ex: 09171234567)');
+        return;
+    }
     }
 
     // Load saved theme
