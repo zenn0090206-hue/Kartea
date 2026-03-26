@@ -268,8 +268,9 @@ function setTheme(theme) {
 }
 
 function loadSavedTheme() {
-    const saved = localStorage.getItem('savedTheme') || 'warm';
-    setTheme(saved);
+    // Force default dark theme and clear any previous saved preference.
+    localStorage.setItem('savedTheme', 'dark');
+    setTheme('dark');
 }
 
 // ================================
@@ -432,8 +433,39 @@ document.addEventListener('click', function(e) {
     setTimeout(() => { btn.textContent = 'Add to Cart'; btn.disabled = false; }, 1400);
 });
 
+// Init menu item images (public fallback)
+function populateMenuImages() {
+    const categoryMap = {
+        coffee: { folder:'coffee', ext:'png' },
+        icetea: { folder:'icetea', ext:'png' },
+        hottea: { folder:'hottea', ext:'png' },
+        milktea: { folder:'milktea', ext:'jpg' },
+        frappe: { folder:'frappe', ext:'jpg' }
+    };
+
+    document.querySelectorAll('section.category').forEach(section => {
+        const sectionClass = Object.keys(categoryMap).find(c => section.classList.contains(c));
+        if (!sectionClass) return;
+        const { folder, ext } = categoryMap[sectionClass];
+
+        section.querySelectorAll('.item-frame').forEach((frame, index) => {
+            if (index >= 6) return;
+            const img = frame.querySelector('.item-image');
+            if (!img) return;
+            if (sectionClass === 'hottea' && index === 5) {
+                img.src = 'hottea4.png';
+            } else {
+                img.src = `${folder}${index + 1}.${ext}`;
+            }
+            img.alt = img.alt || `${sectionClass} ${index + 1}`;
+            img.onerror = () => { img.src = `placeholder.jpg`; };
+        });
+    });
+}
+
 // Init cart on load
 loadCart(); updateCartIndicator(); renderCartBox();
+populateMenuImages();
 
 // Cart indicator, close, and checkout
 document.addEventListener('DOMContentLoaded', () => {
@@ -499,8 +531,6 @@ document.addEventListener('DOMContentLoaded', () => {
         loadCart(); updateCartIndicator(); renderCartBox();
         loadFavorites(); syncFavButtons();
         switchPage('shop-page');
-    } else {
-        switchPage('login-page');
     }
 });
 
